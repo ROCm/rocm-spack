@@ -3,9 +3,15 @@ name: Windows Paraview Nightly
 on:
   schedule:
     - cron: '0 2 * * *' # Run at 2 am
+  push:
+    branches:
+      - rocm-spack-ci-changes
+  pull_request:
+    branches:
+      - rocm-spack-ci-changes
 
 jobs:
-  build-paraview-deps:
+  build-deps:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
