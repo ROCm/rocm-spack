@@ -1,0 +1,23 @@
+name: Windows Paraview Nightly
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Run at 2 am
+  push:
+    branches:
+      - rocm-spack-ci-changes
+  pull_request:
+    branches:
+      - rocm-spack-ci-changes
+
+jobs:
+  build-deps:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      with:
+        ref: 'rocm-spack-ci-changes'
+    - name: Install  essential utilities
+      run: |
+           yum update -y
+           yum install -y make patch bash tar gzip unzip bzip2 xz file gnupg2 git gawk vim python3 pip gcc gcc-gfortran gcc-c++ cmake pciutils
