@@ -74,7 +74,7 @@ class Rocblas(CMakePackage):
     depends_on("googletest@1.10.0:", type="test")
     depends_on("amdblis", type="test")
 
-<    for ver in [
+    for ver in [
         "5.6.0",
         "5.6.1",
         "5.7.0",
