@@ -73,7 +73,6 @@ class RoctracerDev(CMakePackage, ROCmPackage):
         "6.2.0",
         "6.2.1",
         "6.2.4",
-        "develop",
     ]:
         depends_on(f"hsakmt-roct@{ver}", when=f"@{ver}")
 
@@ -99,6 +98,7 @@ class RoctracerDev(CMakePackage, ROCmPackage):
         "6.3.0",
         "6.3.1",
         "6.3.2",
+        "develop",
     ]:
         depends_on(f"hsa-rocr-dev@{ver}", when=f"@{ver}")
         depends_on(f"rocminfo@{ver}", when=f"@{ver}")
