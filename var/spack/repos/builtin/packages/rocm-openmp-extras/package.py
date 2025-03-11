@@ -391,7 +391,8 @@ class RocmOpenmpExtras(Package):
         when="@6.1",
     )
     patch("0001-Avoid-duplicate-registration-on-cuda-env.patch", when="@6.1")
-    patch("0001-Avoid-duplicate-registration-on-cuda-env-6.2.patch", when="@6.2:")
+    patch("0001-Avoid-duplicate-registration-on-cuda-env-6.2.patch", when="@6.2:6.3")
+    patch("0001-Avoid-duplicate-registration-on-cuda-env-develop.patch", when="@develop")
 
     def setup_run_environment(self, env):
         devlibs_prefix = self.spec["llvm-amdgpu"].prefix
