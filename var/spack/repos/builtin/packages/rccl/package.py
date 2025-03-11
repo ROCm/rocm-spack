@@ -169,7 +169,6 @@ class Rccl(CMakePackage):
         env.set("CXX", self.spec["hip"].hipcc)
         env.set("ROCMCORE_PATH", self.spec["rocm-core"].prefix)
 
-
     def cmake_args(self):
         args = [
             self.define("NUMACTL_DIR", self.spec["numactl"].prefix),
@@ -185,6 +184,9 @@ class Rccl(CMakePackage):
 
         if self.spec.satisfies("@5.3.0:"):
             args.append(self.define("BUILD_TESTS", self.run_tests))
+        rocm_version = "6.3.0" if self.spec.satisfies("@develop") else self.version
+        args.append(self.define("EXPLICIT_ROCM_VERSION", rocm_version))
+
         if "@develop" in self.spec:
             args.append(self.define("ROCMCORE_PATH", self.spec["rocm-core"].prefix))
         return args
