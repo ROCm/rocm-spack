@@ -90,6 +90,7 @@ class Rocminfo(CMakePackage):
         "6.3.0",
         "6.3.1",
         "6.3.2",
+        "develop",
     ]:
         depends_on(f"hsa-rocr-dev@{ver}", when=f"@{ver}")
 

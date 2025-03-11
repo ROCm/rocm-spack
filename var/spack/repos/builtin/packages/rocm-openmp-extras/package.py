@@ -179,6 +179,7 @@ class RocmOpenmpExtras(Package):
     license("Apache-2.0")
 
     maintainers("srekolam", "renjithravindrankannath", "estewart08", "afzpatel")
+    version("develop", git="https://github.com/ROCm/aomp.git", branch="aomp-dev")
     version("6.3.2", sha256=versions_dict["6.3.2"]["aomp"])
     version("6.3.1", sha256=versions_dict["6.3.1"]["aomp"])
     version("6.3.0", sha256=versions_dict["6.3.0"]["aomp"])
@@ -349,7 +350,7 @@ class RocmOpenmpExtras(Package):
     for ver in ["6.1.0", "6.1.1", "6.1.2", "6.2.0", "6.2.1", "6.2.4"]:
         depends_on(f"hsakmt-roct@{ver}", when=f"@{ver}")
 
-    for ver in ["6.1.0", "6.1.1", "6.1.2", "6.2.0", "6.2.1", "6.2.4", "6.3.0", "6.3.1", "6.3.2", "develop"]:
+    for ver in ["6.1.0", "6.1.1", "6.1.2", "6.2.0", "6.2.1", "6.2.4", "6.3.0", "6.3.1", "6.3.2"]:
         depends_on(f"comgr@{ver}", when=f"@{ver}")
         depends_on(f"hsa-rocr-dev@{ver}", when=f"@{ver}")
         depends_on(f"llvm-amdgpu@{ver}", when=f"@{ver}")
