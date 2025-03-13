@@ -154,6 +154,7 @@ class Rccl(CMakePackage):
 
     for ver in ["develop"]:
         depends_on(f"roctracer-dev@{ver}", when=f"@{ver}")
+        depends_on(f"rocprofiler-register@{ver}", when=f"@{ver}")
     @classmethod
     def determine_version(cls, lib):
         match = re.search(r"lib\S*\.so\.\d+\.\d+\.(\d)(\d\d)(\d\d)", lib)
@@ -189,6 +190,7 @@ class Rccl(CMakePackage):
 
         if "@develop" in self.spec:
             args.append(self.define("ROCMCORE_PATH", self.spec["rocm-core"].prefix))
+            args.append(self.define("CMAKE_PROGRAM_PATH", f"{self.spec['hipify-clang'].prefix}/include/bin"))
         return args
 
     def test_unit(self):
