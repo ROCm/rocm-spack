@@ -121,3 +121,9 @@ class HipifyClang(CMakePackage):
         if self.spec.satisfies("@5.7.0:"):
             args.append(self.define_from_variant("ADDRESS_SANITIZER", "asan"))
         return args
+
+    @run_after("install")
+    def post_install(self):
+        if self.spec.satisfies("@develop"):
+            chmod = which("chmod")
+            chmod("+x", f"{self.spec.prefix.include.bin}/hipify-perl")
