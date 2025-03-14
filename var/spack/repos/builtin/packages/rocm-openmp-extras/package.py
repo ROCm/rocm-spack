@@ -431,7 +431,7 @@ class RocmOpenmpExtras(Package):
 
     def patch(self):
         src = self.stage.source_path
-        libomptarget = "{0}/rocm-openmp-extras/llvm-project/openmp/libomptarget"
+        libomptarget = "{0}/rocm-openmp-extras/llvm-project/offload"
         flang = "{0}/rocm-openmp-extras/flang/"
 
         plugin = "/plugins/amdgpu/CMakeLists.txt"
