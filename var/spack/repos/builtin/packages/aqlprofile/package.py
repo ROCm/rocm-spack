@@ -8,6 +8,20 @@ import spack.platforms
 from spack.package import *
 
 _versions = {
+    "develop": {
+        "apt": (
+            "bef302bf344c9297f9fb64a4a93f360721a467185bc4fefbeecb307dd956c504",
+            "https://repo.radeon.com/rocm/apt/6.3.2/pool/main/h/hsa-amd-aqlprofile/hsa-amd-aqlprofile_1.0.0.60302-66~20.04_amd64.deb",
+        ),
+        "yum": (
+            "1e01de060073cb72a97fcddf0f3b637b48cf89a08b34f2447d010031abc0e099",
+            "https://repo.radeon.com/rocm/rhel8/6.3.2/main/hsa-amd-aqlprofile-1.0.0.60302-66.el8.x86_64.rpm",
+        ),
+        "zyp": (
+            "408fb29e09ba59a9e83e8f7d703ba53e1ef3b3acbae1103b2a82d4f87f321752",
+            "https://repo.radeon.com/rocm/zyp/6.3.2/main/hsa-amd-aqlprofile-1.0.0.60302-sles155.66.x86_64.rpm",
+        ),
+    },
     "6.3.2": {
         "apt": (
             "bef302bf344c9297f9fb64a4a93f360721a467185bc4fefbeecb307dd956c504",
@@ -290,6 +304,7 @@ class Aqlprofile(Package):
         "6.3.0",
         "6.3.1",
         "6.3.2",
+        "develop",
     ]:
         depends_on(f"hsa-rocr-dev@{ver}", when=f"@{ver}")
 
@@ -304,8 +319,9 @@ class Aqlprofile(Package):
                 os.system("tar xvf data.tar.gz")
                 break
 
-        install_tree(f"opt/rocm-{spec.version}/share/", prefix.share)
-        install_tree(f"opt/rocm-{spec.version}/lib/", prefix.lib)
+        rocm_version = "6.3.2" if self.spec.satisfies("@develop") else self.version
+        install_tree(f"opt/rocm-{rocm_version}/share/", prefix.share)
+        install_tree(f"opt/rocm-{rocm_version}/lib/", prefix.lib)
 
     def setup_run_environment(self, env):
         env.prepend_path("LD_LIBRARY_PATH", self.spec["hsa-rocr-dev"].prefix.lib)

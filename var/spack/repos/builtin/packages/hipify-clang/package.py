@@ -10,8 +10,9 @@ class HipifyClang(CMakePackage):
     sources into HIP sources"""
 
     homepage = "https://github.com/ROCm/HIPIFY"
-    git = "https://github.com/ROCm/HIPIFY.git"
+    git = "ssh://gerritgit/compute/ec/hipify.git"
     url = "https://github.com/ROCm/HIPIFY/archive/rocm-6.2.4.tar.gz"
+
     tags = ["rocm"]
 
     maintainers("srekolam", "renjithravindrankannath", "afzpatel")
@@ -19,6 +20,7 @@ class HipifyClang(CMakePackage):
     license("MIT")
 
     version("master", branch="master")
+    version("develop", branch="amd-mainline")
     version("6.3.2", sha256="c0da5118be8207fab6d19803417c0b8d2db5bc766279038527cbd6fa92b25c67")
     version("6.3.1", sha256="5f9d9a65545f97b18c6a0d4394dca1bcdee10737a5635b79378ea505081f9315")
     version("6.3.0", sha256="9fced04f9e36350bdbabd730c446b55a898e2f4ba82078855bcf5dea3b5e8dc8")
@@ -51,9 +53,11 @@ class HipifyClang(CMakePackage):
     # this will fix the issue https://github.com/spack/spack/issues/30711
 
     patch("0001-install-hipify-clang-in-bin-dir-and-llvm-clangs-head.patch", when="@5.1.0:5.5")
+    patch("0002-install-hipify-clang-in-bin-dir-and-llvm-clangs-head.patch", when="@5.6")
+    patch("0004-install-hipify-clang-in-bin-dir-and-llvm-clangs-head.patch", when="@develop")
     patch("0002-install-hipify-clang-in-bin-dir-and-llvm-clangs-head.patch", when="@5.6:6.0")
     patch("0003-install-hipify-clang-in-bin-dir-and-llvm-clangs-head.patch", when="@6.1")
-    patch("0001-use-source-permission-for-hipify-perl.patch", when="@6.2:")
+    patch("0001-use-source-permission-for-hipify-perl.patch", when="@6.2:6.3")
 
     depends_on("cmake@3.5:", type="build")
     for ver in [
@@ -79,6 +83,7 @@ class HipifyClang(CMakePackage):
         "6.3.1",
         "6.3.2",
         "master",
+        "develop",
     ]:
         depends_on(f"llvm-amdgpu@{ver}", when=f"@{ver}")
 
@@ -100,6 +105,7 @@ class HipifyClang(CMakePackage):
         "6.3.0",
         "6.3.1",
         "6.3.2",
+        "develop",
     ]:
         depends_on(f"rocm-core@{ver}", when=f"@{ver}")
 
@@ -115,3 +121,9 @@ class HipifyClang(CMakePackage):
         if self.spec.satisfies("@5.7.0:"):
             args.append(self.define_from_variant("ADDRESS_SANITIZER", "asan"))
         return args
+
+    @run_after("install")
+    def post_install(self):
+        if self.spec.satisfies("@develop"):
+            chmod = which("chmod")
+            chmod("+x", f"{self.spec.prefix.include.bin}/hipify-perl")
