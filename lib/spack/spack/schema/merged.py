@@ -21,10 +21,12 @@ import spack.schema.container
 import spack.schema.definitions
 import spack.schema.develop
 import spack.schema.env_vars
+import spack.schema.include
 import spack.schema.mirrors
 import spack.schema.modules
 import spack.schema.packages
 import spack.schema.repos
+import spack.schema.toolchains
 import spack.schema.upstreams
 import spack.schema.view
 
@@ -40,14 +42,15 @@ properties: Dict[str, Any] = union_dicts(
     spack.schema.definitions.properties,
     spack.schema.develop.properties,
     spack.schema.env_vars.properties,
+    spack.schema.include.properties,
     spack.schema.mirrors.properties,
     spack.schema.modules.properties,
     spack.schema.packages.properties,
     spack.schema.repos.properties,
+    spack.schema.toolchains.properties,
     spack.schema.upstreams.properties,
     spack.schema.view.properties,
 )
-
 
 #: Full schema with metadata
 schema = {

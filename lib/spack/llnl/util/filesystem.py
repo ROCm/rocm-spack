@@ -7,6 +7,7 @@ import errno
 import fnmatch
 import glob
 import hashlib
+import io
 import itertools
 import numbers
 import os
@@ -20,6 +21,7 @@ import tempfile
 from contextlib import contextmanager
 from itertools import accumulate
 from typing import (
+    IO,
     Callable,
     Deque,
     Dict,
@@ -244,8 +246,8 @@ def rename(src, dst):
     # On Windows, os.rename will fail if the destination file already exists
     # os.replace is the same as os.rename on POSIX and is MoveFileExW w/
     # the MOVEFILE_REPLACE_EXISTING flag on Windows
-    # Windows invocation is abstracted behind additonal logic handling
-    # remaining cases of divergent behavior accross platforms
+    # Windows invocation is abstracted behind additional logic handling
+    # remaining cases of divergent behavior across platforms
     if sys.platform == "win32":
         _win_rename(src, dst)
     else:
@@ -473,7 +475,7 @@ def exploding_archive_catch(stage):
     # NOTE: The tar program on Mac OS X will encode HFS metadata in
     # hidden files, which can end up *alongside* a single top-level
     # directory.  We initially ignore presence of hidden files to
-    # accomodate these "semi-exploding" tarballs but ensure the files
+    # accommodate these "semi-exploding" tarballs but ensure the files
     # are copied to the source directory.
 
     # Expand all tarballs in their own directory to contain
@@ -484,7 +486,7 @@ def exploding_archive_catch(stage):
     os.chdir(tarball_container)
     try:
         yield
-        # catch an exploding archive on sucessful extraction
+        # catch an exploding archive on successful extraction
         os.chdir(orig_dir)
         exploding_archive_handler(tarball_container, stage)
     except Exception as e:
@@ -762,7 +764,7 @@ def copy_tree(
 
     files = glob.glob(src)
     if not files:
-        raise OSError("No such file or directory: '{0}'".format(src))
+        raise OSError("No such file or directory: '{0}'".format(src), errno.ENOENT)
 
     # For Windows hard-links and junctions, the source path must exist to make a symlink. Add
     # all symlinks to this list while traversing the tree, then when finished, make all
@@ -1028,6 +1030,7 @@ def replace_directory_transaction(directory_name):
     Returns:
         temporary directory where ``directory_name`` has been moved
     """
+
     # Check the input is indeed a directory with absolute path.
     # Raise before anything is done to avoid moving the wrong directory
     directory_name = os.path.abspath(directory_name)
@@ -1432,7 +1435,7 @@ def visit_directory_tree(
         try:
             isdir = f.is_dir()
         except OSError as e:
-            if sys.platform == "win32" and hasattr(e, "winerror") and e.winerror == 5 and islink:
+            if sys.platform == "win32" and e.errno == errno.EACCES and islink:
                 # if path is a symlink, determine destination and evaluate file vs directory
                 link_target = resolve_link_target_relative_to_the_link(f)
                 # link_target might be relative but resolve_link_target_relative_to_the_link
@@ -2450,30 +2453,73 @@ class WindowsSimulatedRPath:
     One instance of this class is associated with a package (only on Windows)
     For each lib/binary directory in an associated package, this class introduces
     a symlink to any/all dependent libraries/binaries. This includes the packages
-    own bin/lib directories, meaning the libraries are linked to the bianry directory
+    own bin/lib directories, meaning the libraries are linked to the binary directory
     and vis versa.
     """
 
-    def __init__(self, package, link_install_prefix=True):
+    def __init__(
+        self,
+        package,
+        base_modification_prefix: Optional[Union[str, pathlib.Path]] = None,
+        link_install_prefix: bool = True,
+    ):
         """
         Args:
             package (spack.package_base.PackageBase): Package requiring links
+            base_modification_prefix (str|pathlib.Path): Path representation indicating
+                the root directory in which to establish the simulated rpath, ie where the
+                symlinks that comprise the "rpath" behavior will be installed.
+
+                Note: This is a mutually exclusive option with `link_install_prefix` using
+                both is an error.
+
+                Default: None
             link_install_prefix (bool): Link against package's own install or stage root.
                 Packages that run their own executables during build and require rpaths to
-                the build directory during build time require this option. Default: install
+                the build directory during build time require this option.
+
+                Default: install
                 root
+
+                Note: This is a mutually exclusive option with `base_modification_prefix`, using
+                both is an error.
         """
         self.pkg = package
-        self._addl_rpaths = set()
+        self._addl_rpaths: set[str] = set()
+        if link_install_prefix and base_modification_prefix:
+            raise RuntimeError(
+                "Invalid combination of arguments given to WindowsSimulated RPath.\n"
+                "Select either `link_install_prefix` to create an install prefix rpath"
+                " or specify a `base_modification_prefix` for any other link type. "
+                "Specifying both arguments is invalid."
+            )
+        if not (link_install_prefix or base_modification_prefix):
+            raise RuntimeError(
+                "Insufficient arguments given to WindowsSimulatedRpath.\n"
+                "WindowsSimulatedRPath requires one of link_install_prefix"
+                " or base_modification_prefix to be specified."
+                " Neither was provided."
+            )
+
         self.link_install_prefix = link_install_prefix
-        self._additional_library_dependents = set()
+        if base_modification_prefix:
+            self.base_modification_prefix = pathlib.Path(base_modification_prefix)
+        else:
+            self.base_modification_prefix = pathlib.Path(self.pkg.prefix)
+        self._additional_library_dependents: set[pathlib.Path] = set()
+        if not self.link_install_prefix:
+            tty.debug(f"Generating rpath for non install context: {base_modification_prefix}")
 
     @property
     def library_dependents(self):
         """
         Set of directories where package binaries/libraries are located.
         """
-        return set([pathlib.Path(self.pkg.prefix.bin)]) | self._additional_library_dependents
+        base_pths = set()
+        if self.link_install_prefix:
+            base_pths.add(pathlib.Path(self.pkg.prefix.bin))
+        base_pths |= self._additional_library_dependents
+        return base_pths
 
     def add_library_dependent(self, *dest):
         """
@@ -2489,6 +2535,12 @@ class WindowsSimulatedRPath:
                 new_pth = pathlib.Path(pth).parent
             else:
                 new_pth = pathlib.Path(pth)
+            path_is_in_prefix = new_pth.is_relative_to(self.base_modification_prefix)
+            if not path_is_in_prefix:
+                raise RuntimeError(
+                    f"Attempting to generate rpath symlink out of rpath context:\
+{str(self.base_modification_prefix)}"
+                )
             self._additional_library_dependents.add(new_pth)
 
     @property
@@ -2528,7 +2580,7 @@ class WindowsSimulatedRPath:
         mode is not enabled"""
 
         def report_already_linked():
-            # We have either already symlinked or we are encoutering a naming clash
+            # We have either already symlinked or we are encountering a naming clash
             # either way, we don't want to overwrite existing libraries
             already_linked = islink(str(dest_file))
             tty.debug(
@@ -2548,7 +2600,7 @@ class WindowsSimulatedRPath:
             # associate with trying to create a file that already exists (winerror 183)
             # Catch OSErrors missed by the SymlinkError checks
             except OSError as e:
-                if sys.platform == "win32" and (e.winerror == 183 or e.errno == errno.EEXIST):
+                if sys.platform == "win32" and e.errno == errno.EEXIST:
                     report_already_linked()
                 else:
                     raise e
@@ -2575,6 +2627,33 @@ class WindowsSimulatedRPath:
         if "windows-system" not in getattr(self.pkg, "tags", []):
             for library, lib_dir in itertools.product(self.rpaths, self.library_dependents):
                 self._link(library, lib_dir)
+
+
+def make_package_test_rpath(pkg, test_dir: Union[str, pathlib.Path]):
+    """Establishes a temp Windows simulated rpath for the pkg in the testing directory
+    so an executable can test the libraries/executables with proper access
+    to dependent dlls
+
+    Note: this is a no-op on all other platforms besides Windows
+
+    Args:
+        pkg (spack.package_base.PackageBase): the package for which the rpath should be computed
+        test_dir: the testing directory in which we should construct an rpath
+    """
+    # link_install_prefix as false ensures we're not linking into the install prefix
+    mini_rpath = WindowsSimulatedRPath(pkg, link_install_prefix=False)
+    # add the testing directory as a location to install rpath symlinks
+    mini_rpath.add_library_dependent(test_dir)
+
+    # check for whether build_directory is available, if not
+    # assume the stage root is the build dir
+    build_dir_attr = getattr(pkg, "build_directory", None)
+    build_directory = build_dir_attr if build_dir_attr else pkg.stage.path
+    # add the build dir & build dir bin
+    mini_rpath.add_rpath(os.path.join(build_directory, "bin"))
+    mini_rpath.add_rpath(os.path.join(build_directory))
+    # construct rpath
+    mini_rpath.establish_link()
 
 
 @system_path_filter
@@ -2803,6 +2882,20 @@ def keep_modification_time(*filenames):
     for f, mtime in mtimes.items():
         if os.path.exists(f):
             os.utime(f, (os.path.getatime(f), mtime))
+
+
+@contextmanager
+def temporary_file_position(stream):
+    orig_pos = stream.tell()
+    yield
+    stream.seek(orig_pos)
+
+
+@contextmanager
+def current_file_position(stream: IO[str], loc: int, relative_to=io.SEEK_CUR):
+    with temporary_file_position(stream):
+        stream.seek(loc, relative_to)
+        yield
 
 
 @contextmanager
