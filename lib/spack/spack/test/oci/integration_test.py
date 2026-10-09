@@ -15,7 +15,6 @@ from contextlib import contextmanager
 
 import pytest
 
-import spack
 import spack.binary_distribution
 import spack.database
 import spack.deptypes as dt
@@ -24,6 +23,7 @@ import spack.error
 import spack.oci.opener
 import spack.spec
 import spack.traverse
+from spack.database import Database
 from spack.main import SpackCommand
 from spack.oci.image import Digest, ImageReference, default_config, default_manifest
 from spack.oci.oci import blob_exists, get_manifest_and_config, upload_blob, upload_manifest
@@ -44,7 +44,7 @@ def oci_servers(*servers: DummyServer):
     spack.oci.opener.urlopen = old_opener
 
 
-def test_buildcache_push_command(mutable_database):
+def test_buildcache_push_command(mutable_database: Database):
     with oci_servers(InMemoryOCIRegistry("example.com")):
         mirror("add", "oci-test", "oci://example.com/image")
 
@@ -61,7 +61,7 @@ def test_buildcache_push_command(mutable_database):
         buildcache("install", "--unsigned", "mpileaks^mpich")
 
         # Now it should be installed again
-        assert spec.installed
+        assert mutable_database.installed(spec)
 
         # And let's check that the bin/mpileaks executable is there
         assert os.path.exists(os.path.join(spec.prefix, "bin", "mpileaks"))
@@ -113,7 +113,7 @@ def test_buildcache_tag(install_mockery, mock_fetch, mutable_mock_env_path):
         )
 
 
-def test_buildcache_push_with_base_image_command(mutable_database, tmpdir):
+def test_buildcache_push_with_base_image_command(mutable_database, tmp_path: pathlib.Path):
     """Test that we can push a package with a base image to an OCI registry.
 
     This test is a bit involved, cause we have to create a small base image."""
@@ -133,43 +133,40 @@ def test_buildcache_push_with_base_image_command(mutable_database, tmpdir):
         config, manifest = default_config(architecture="amd64", os="linux"), default_manifest()
 
         # Create a small rootfs
-        rootfs = tmpdir.join("rootfs")
-        rootfs.ensure(dir=True)
-        rootfs.join("bin").ensure(dir=True)
-        rootfs.join("bin", "sh").ensure(file=True)
+        rootfs = tmp_path / "rootfs"
+        rootfs.mkdir()
+        (rootfs / "bin").mkdir()
+        (rootfs / "bin" / "sh").touch()
 
         # Create a tarball of it.
-        tarball = tmpdir.join("base.tar.gz")
-        with gzip_compressed_tarfile(tarball) as (tar, tar_gz_checksum, tar_checksum):
-            tar.add(rootfs, arcname=".")
+        tarball = tmp_path / "base.tar.gz"
+        with gzip_compressed_tarfile(str(tarball)) as (tar, tar_gz_checksum, tar_checksum):
+            tar.add(str(rootfs), arcname=".")
 
         tar_gz_digest = Digest.from_sha256(tar_gz_checksum.hexdigest())
         tar_digest = Digest.from_sha256(tar_checksum.hexdigest())
 
         # Save the config file
         config["rootfs"]["diff_ids"] = [str(tar_digest)]
-        config_file = tmpdir.join("config.json")
-        with open(config_file, "w", encoding="utf-8") as f:
-            f.write(json.dumps(config))
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config), encoding="utf-8")
 
-        config_digest = Digest.from_sha256(
-            hashlib.sha256(open(config_file, "rb").read()).hexdigest()
-        )
+        config_digest = Digest.from_sha256(hashlib.sha256(config_file.read_bytes()).hexdigest())
 
         # Register the layer in the manifest
         manifest["layers"].append(
             {
                 "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
                 "digest": str(tar_gz_digest),
-                "size": tarball.size(),
+                "size": tarball.stat().st_size,
             }
         )
         manifest["config"]["digest"] = str(config_digest)
-        manifest["config"]["size"] = config_file.size()
+        manifest["config"]["size"] = config_file.stat().st_size
 
         # Upload the layer and config file
-        upload_blob(base_image, tarball, tar_gz_digest)
-        upload_blob(base_image, config_file, config_digest)
+        upload_blob(base_image, str(tarball), tar_gz_digest)
+        upload_blob(base_image, str(config_file), config_digest)
 
         # Upload the manifest
         upload_manifest(base_image, manifest)
@@ -234,7 +231,7 @@ def test_uploading_with_base_image_in_docker_image_manifest_v2_format(
         (rootfs / "bin").mkdir(parents=True)
         (rootfs / "bin" / "sh").write_text("hello world")
         tarball = tmp_path / "base.tar.gz"
-        with gzip_compressed_tarfile(tarball) as (tar, tar_gz_checksum, tar_checksum):
+        with gzip_compressed_tarfile(str(tarball)) as (tar, tar_gz_checksum, tar_checksum):
             tar.add(rootfs, arcname=".")
         tar_gz_digest = Digest.from_sha256(tar_gz_checksum.hexdigest())
         tar_digest = Digest.from_sha256(tar_checksum.hexdigest())
@@ -260,7 +257,7 @@ def test_uploading_with_base_image_in_docker_image_manifest_v2_format(
             "history": [
                 {
                     "created": "2015-10-31T22:22:54.690851953Z",
-                    "created_by": "/bin/sh -c #(nop) ADD file:a3bc1e842b69636f9df5256c49c5374fb4eef1e281fe3f282c65fb853ee171c5 in /",
+                    "created_by": "/bin/sh -c #(nop) ADD file:a3bc1e842b69636f9df5256c49c5374fb4eef1e281fe3f282c65fb853ee171c5 in /",  # noqa: E501
                 }
             ],
         }

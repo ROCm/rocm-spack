@@ -2,19 +2,22 @@
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-import re
+import pathlib
 import shutil
 
 import pytest
-
-from llnl.util.filesystem import mkdirp, working_dir
 
 import spack.cmd
 import spack.cmd.pkg
 import spack.main
 import spack.paths
 import spack.repo
+import spack.util.executable
 import spack.util.file_cache
+from spack.repo import RepoPath
+from spack.util.filesystem import mkdirp, working_dir
+
+pkg = spack.main.SpackCommand("pkg")
 
 #: new fake package template
 pkg_template = """\
@@ -30,15 +33,14 @@ class {name}(Package):
         pass
 """
 
-abc = {"mockpkg-a", "mockpkg-b", "mockpkg-c"}
-abd = {"mockpkg-a", "mockpkg-b", "mockpkg-d"}
-
 
 # Force all tests to use a git repository *in* the mock packages repo.
 @pytest.fixture(scope="module")
-def mock_pkg_git_repo(git, tmp_path_factory):
-    """Copy the builtin.mock repo and make a mutable git repo inside it."""
-    root_dir = tmp_path_factory.mktemp("mock_pkg_git_repo")
+def _builtin_mock_copy(
+    git: spack.util.executable.Executable, tmp_path_factory: pytest.TempPathFactory
+):
+    """Copy the builtin_mock repo and make a mutable git repo inside it."""
+    root_dir: pathlib.Path = tmp_path_factory.mktemp("builtin_mock_copy")
     # create spack_repo subdir
     (root_dir / "spack_repo").mkdir()
     repo_dir = root_dir / "spack_repo" / "builtin_mock"
@@ -85,42 +87,25 @@ def mock_pkg_git_repo(git, tmp_path_factory):
             "change mockpkg-b, remove mockpkg-c, add mockpkg-d",
         )
 
-    with spack.repo.use_repositories(mock_repo):
-        yield mock_repo.packages_path
+    yield mock_repo
 
 
-@pytest.fixture(scope="module")
-def mock_pkg_names():
-    repo = spack.repo.PATH.get_repo("builtin_mock")
-
-    # Be sure to include virtual packages since packages with stand-alone
-    # tests may inherit additional tests from the virtuals they provide,
-    # such as packages that implement `mpi`.
-    return {
-        name
-        for name in repo.all_package_names(include_virtuals=True)
-        if not name.startswith("mockpkg-")
-    }
+@pytest.fixture
+def builtin_mock_copy(_builtin_mock_copy: spack.repo.Repo):
+    """Fixture that enables a copy of the builtin_mock repo."""
+    with spack.repo.use_repositories(_builtin_mock_copy):
+        yield _builtin_mock_copy
 
 
-def split(output):
-    """Split command line output into an array."""
-    output = output.strip()
-    return re.split(r"\s+", output) if output else []
-
-
-pkg = spack.main.SpackCommand("pkg")
-
-
-def test_pkg_add(git, mock_pkg_git_repo):
-    with working_dir(mock_pkg_git_repo):
+def test_pkg_add(git, builtin_mock_copy: spack.repo.Repo):
+    with working_dir(builtin_mock_copy.packages_path):
         mkdirp("mockpkg_e")
         with open("mockpkg_e/package.py", "w", encoding="utf-8") as f:
             f.write(pkg_template.format(name="PkgE"))
 
     pkg("add", "mockpkg-e")
 
-    with working_dir(mock_pkg_git_repo):
+    with working_dir(builtin_mock_copy.packages_path):
         try:
             assert "A  mockpkg_e/package.py" in git("status", "--short", output=str)
         finally:
@@ -134,96 +119,105 @@ def test_pkg_add(git, mock_pkg_git_repo):
 
 
 @pytest.mark.not_on_windows("stdout format conflict")
-def test_pkg_list(mock_pkg_git_repo, mock_pkg_names):
-    out = split(pkg("list", "HEAD^^"))
+def test_pkg_list(builtin_mock_copy: spack.repo.Repo):
+    # Be sure to include virtual packages since packages with stand-alone
+    # tests may inherit additional tests from the virtuals they provide,
+    # such as packages that implement `mpi`.
+    mock_pkg_names = {
+        name
+        for name in builtin_mock_copy.all_package_names(include_virtuals=True)
+        if not name.startswith("mockpkg-")
+    }
+
+    out = pkg("list", "HEAD^^").split()
     assert sorted(mock_pkg_names) == sorted(out)
 
-    out = split(pkg("list", "HEAD^"))
+    out = pkg("list", "HEAD^").split()
     assert sorted(mock_pkg_names.union(["mockpkg-a", "mockpkg-b", "mockpkg-c"])) == sorted(out)
 
-    out = split(pkg("list", "HEAD"))
+    out = pkg("list", "HEAD").split()
     assert sorted(mock_pkg_names.union(["mockpkg-a", "mockpkg-b", "mockpkg-d"])) == sorted(out)
 
     # test with three dots to make sure pkg calls `git merge-base`
-    out = split(pkg("list", "HEAD^^..."))
+    out = pkg("list", "HEAD^^...").split()
     assert sorted(mock_pkg_names) == sorted(out)
 
 
 @pytest.mark.not_on_windows("stdout format conflict")
-def test_pkg_diff(mock_pkg_git_repo, mock_pkg_names):
-    out = split(pkg("diff", "HEAD^^", "HEAD^"))
+def test_pkg_diff(builtin_mock_copy: spack.repo.Repo):
+    out = pkg("diff", "HEAD^^", "HEAD^").split()
     assert out == ["HEAD^:", "mockpkg-a", "mockpkg-b", "mockpkg-c"]
 
-    out = split(pkg("diff", "HEAD^^", "HEAD"))
+    out = pkg("diff", "HEAD^^", "HEAD").split()
     assert out == ["HEAD:", "mockpkg-a", "mockpkg-b", "mockpkg-d"]
 
-    out = split(pkg("diff", "HEAD^", "HEAD"))
+    out = pkg("diff", "HEAD^", "HEAD").split()
     assert out == ["HEAD^:", "mockpkg-c", "HEAD:", "mockpkg-d"]
 
 
 @pytest.mark.not_on_windows("stdout format conflict")
-def test_pkg_added(mock_pkg_git_repo):
-    out = split(pkg("added", "HEAD^^", "HEAD^"))
+def test_pkg_added(builtin_mock_copy: spack.repo.Repo):
+    out = pkg("added", "HEAD^^", "HEAD^").split()
     assert ["mockpkg-a", "mockpkg-b", "mockpkg-c"] == out
 
-    out = split(pkg("added", "HEAD^^", "HEAD"))
+    out = pkg("added", "HEAD^^", "HEAD").split()
     assert ["mockpkg-a", "mockpkg-b", "mockpkg-d"] == out
 
-    out = split(pkg("added", "HEAD^", "HEAD"))
+    out = pkg("added", "HEAD^", "HEAD").split()
     assert ["mockpkg-d"] == out
 
-    out = split(pkg("added", "HEAD", "HEAD"))
+    out = pkg("added", "HEAD", "HEAD").split()
     assert out == []
 
 
 @pytest.mark.not_on_windows("stdout format conflict")
-def test_pkg_removed(mock_pkg_git_repo):
-    out = split(pkg("removed", "HEAD^^", "HEAD^"))
+def test_pkg_removed(builtin_mock_copy: spack.repo.Repo):
+    out = pkg("removed", "HEAD^^", "HEAD^").split()
     assert out == []
 
-    out = split(pkg("removed", "HEAD^^", "HEAD"))
+    out = pkg("removed", "HEAD^^", "HEAD").split()
     assert out == []
 
-    out = split(pkg("removed", "HEAD^", "HEAD"))
+    out = pkg("removed", "HEAD^", "HEAD").split()
     assert out == ["mockpkg-c"]
 
 
 @pytest.mark.not_on_windows("stdout format conflict")
-def test_pkg_changed(mock_pkg_git_repo):
-    out = split(pkg("changed", "HEAD^^", "HEAD^"))
+def test_pkg_changed(builtin_mock_copy: spack.repo.Repo):
+    out = pkg("changed", "HEAD^^", "HEAD^").split()
     assert out == []
 
-    out = split(pkg("changed", "--type", "c", "HEAD^^", "HEAD^"))
+    out = pkg("changed", "--type", "c", "HEAD^^", "HEAD^").split()
     assert out == []
 
-    out = split(pkg("changed", "--type", "a", "HEAD^^", "HEAD^"))
+    out = pkg("changed", "--type", "a", "HEAD^^", "HEAD^").split()
     assert out == ["mockpkg-a", "mockpkg-b", "mockpkg-c"]
 
-    out = split(pkg("changed", "--type", "r", "HEAD^^", "HEAD^"))
+    out = pkg("changed", "--type", "r", "HEAD^^", "HEAD^").split()
     assert out == []
 
-    out = split(pkg("changed", "--type", "ar", "HEAD^^", "HEAD^"))
+    out = pkg("changed", "--type", "ar", "HEAD^^", "HEAD^").split()
     assert out == ["mockpkg-a", "mockpkg-b", "mockpkg-c"]
 
-    out = split(pkg("changed", "--type", "arc", "HEAD^^", "HEAD^"))
+    out = pkg("changed", "--type", "arc", "HEAD^^", "HEAD^").split()
     assert out == ["mockpkg-a", "mockpkg-b", "mockpkg-c"]
 
-    out = split(pkg("changed", "HEAD^", "HEAD"))
+    out = pkg("changed", "HEAD^", "HEAD").split()
     assert out == ["mockpkg-b"]
 
-    out = split(pkg("changed", "--type", "c", "HEAD^", "HEAD"))
+    out = pkg("changed", "--type", "c", "HEAD^", "HEAD").split()
     assert out == ["mockpkg-b"]
 
-    out = split(pkg("changed", "--type", "a", "HEAD^", "HEAD"))
+    out = pkg("changed", "--type", "a", "HEAD^", "HEAD").split()
     assert out == ["mockpkg-d"]
 
-    out = split(pkg("changed", "--type", "r", "HEAD^", "HEAD"))
+    out = pkg("changed", "--type", "r", "HEAD^", "HEAD").split()
     assert out == ["mockpkg-c"]
 
-    out = split(pkg("changed", "--type", "ar", "HEAD^", "HEAD"))
+    out = pkg("changed", "--type", "ar", "HEAD^", "HEAD").split()
     assert out == ["mockpkg-c", "mockpkg-d"]
 
-    out = split(pkg("changed", "--type", "arc", "HEAD^", "HEAD"))
+    out = pkg("changed", "--type", "arc", "HEAD^", "HEAD").split()
     assert out == ["mockpkg-b", "mockpkg-c", "mockpkg-d"]
 
     # invalid type argument
@@ -245,10 +239,10 @@ def test_pkg_source_requires_one_arg(mock_packages):
         pkg("source", "--canonical", "a", "b")
 
 
-def test_pkg_source(mock_packages):
+def test_pkg_source(mock_packages: RepoPath):
     fake_source = pkg("source", "fake")
 
-    fake_file = spack.repo.PATH.filename_for_package_name("fake")
+    fake_file = mock_packages.filename_for_package_name("fake")
     with open(fake_file, encoding="utf-8") as f:
         contents = f.read()
         assert fake_source == contents
@@ -290,10 +284,10 @@ def test_pkg_canonical_source(mock_packages):
 
 
 def test_pkg_hash(mock_packages):
-    output = pkg("hash", "pkg-a", "pkg-b").strip().split()
+    output = pkg("hash", "pkg-a", "pkg-b").split()
     assert len(output) == 2 and all(len(elt) == 32 for elt in output)
 
-    output = pkg("hash", "multimethod").strip().split()
+    output = pkg("hash", "multimethod").split()
     assert len(output) == 1 and all(len(elt) == 32 for elt in output)
 
 
@@ -351,12 +345,11 @@ def test_group_arguments(
 
 
 @pytest.mark.skipif(not spack.cmd.pkg.get_grep(), reason="grep is not installed")
-def test_pkg_grep(mock_packages, capfd):
+def test_pkg_grep(mock_packages: RepoPath):
     # only splice-* mock packages have the string "splice" in them
     pkg("grep", "-l", "splice")
-    output, _ = capfd.readouterr()
-    assert output.strip() == "\n".join(
-        spack.repo.PATH.get_pkg_class(name).module.__file__
+    assert pkg.output.strip() == "\n".join(
+        mock_packages.get_pkg_class(name).module.__file__
         for name in [
             "depends-on-manyvariants",
             "manyvariants",
@@ -377,8 +370,7 @@ def test_pkg_grep(mock_packages, capfd):
     with pytest.raises(spack.main.SpackCommandError):
         pkg("grep", "abcdefghijklmnopqrstuvwxyz")
     assert pkg.returncode == 1
-    output, _ = capfd.readouterr()
-    assert output.strip() == ""
+    assert pkg.output.strip() == ""
 
     # ensure that we return > 1 for an error
     with pytest.raises(spack.main.SpackCommandError):

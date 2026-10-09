@@ -6,13 +6,12 @@ import argparse
 import io
 import sys
 
-import llnl.util.tty.colify as colify
-
 import spack.cmd
 import spack.repo
+from spack.util.tty import colify
 
 description = "list packages that provide a particular virtual package"
-section = "basic"
+section = "query"
 level = "long"
 
 

@@ -8,8 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from llnl.util.filesystem import mkdirp, working_dir
-
 import spack.cmd.blame
 import spack.paths
 import spack.util.spack_json as sjson
@@ -17,6 +15,7 @@ from spack.cmd.blame import ensure_full_history, git_prefix, package_repo_root
 from spack.main import SpackCommand, SpackCommandError
 from spack.repo import RepoDescriptors
 from spack.util.executable import ProcessError
+from spack.util.filesystem import mkdirp, working_dir
 
 pytestmark = pytest.mark.usefixtures("git")
 
@@ -62,7 +61,7 @@ def test_blame_directory():
         assert "not tracked" in out
 
 
-def test_blame_file_outside_spack_repo(tmp_path):
+def test_blame_file_outside_spack_repo(tmp_path: Path):
     """Ensure attempts to get blame outside a package repository are flagged."""
     test_file = tmp_path / "test"
     test_file.write_text("This is a test")
@@ -105,10 +104,9 @@ def test_blame_json(mock_packages):
 
 
 @pytest.mark.not_on_windows("git hangs")
-def test_blame_by_git(mock_packages, capfd):
+def test_blame_by_git(mock_packages):
     """Sanity check the blame command to make sure it works."""
-    with capfd.disabled():
-        out = blame("--git", "mpich")
+    out = blame("--git", "mpich")
     assert "class Mpich" in out
     assert '    homepage = "http://www.mpich.org"' in out
 
@@ -169,13 +167,12 @@ def test_repo_root_remote_descriptor(mock_git_version_info, monkeypatch):
     assert prefix == git_repo_path
 
 
-def test_git_prefix_bad(tmp_path):
+def test_git_prefix_bad(tmp_path: Path):
     """Exercise git_prefix paths with arguments that will not return success."""
     assert git_prefix("no/such/file.txt") is None
 
     with pytest.raises(SystemExit):
-        out = git_prefix(tmp_path)
-        assert "not in a git repository" in out
+        git_prefix(tmp_path)
 
 
 def test_ensure_full_history_shallow_works(mock_git_version_info, monkeypatch):
@@ -196,7 +193,7 @@ def test_ensure_full_history_shallow_works(mock_git_version_info, monkeypatch):
     ensure_full_history(repo_path, filename)
 
 
-def test_ensure_full_history_shallow_fails(mock_git_version_info, monkeypatch, capsys):
+def test_ensure_full_history_shallow_fails(mock_git_version_info, monkeypatch, capfd):
     """Ensure a git that supports '--unshallow' but fails generates useful error."""
     error_msg = "Mock git cannot fetch."
 
@@ -216,11 +213,11 @@ def test_ensure_full_history_shallow_fails(mock_git_version_info, monkeypatch, c
     with pytest.raises(SystemExit):
         ensure_full_history(repo_path, filename)
 
-    out = capsys.readouterr()
+    out = capfd.readouterr()
     assert error_msg in out[1]
 
 
-def test_ensure_full_history_shallow_old_git(mock_git_version_info, monkeypatch, capsys):
+def test_ensure_full_history_shallow_old_git(mock_git_version_info, monkeypatch, capfd):
     """Ensure a git that doesn't support '--unshallow' fails."""
 
     def _git(*args, **kwargs):
@@ -236,5 +233,5 @@ def test_ensure_full_history_shallow_old_git(mock_git_version_info, monkeypatch,
     with pytest.raises(SystemExit):
         ensure_full_history(repo_path, filename)
 
-    out = capsys.readouterr()
+    out = capfd.readouterr()
     assert "Use a newer" in out[1]

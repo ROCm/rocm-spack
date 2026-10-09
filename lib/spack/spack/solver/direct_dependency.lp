@@ -7,14 +7,16 @@
   build_requirement(PackageNode, node(0..X-1, DirectDependency)) : max_dupes(DirectDependency, X);
   runtime_requirement(PackageNode, node(0..X-1, DirectDependency)) : max_dupes(DirectDependency, X)
 } 1 :- attr("direct_dependency", PackageNode, node_requirement("node", DirectDependency)),
-       not external(PackageNode),
-       not concrete(PackageNode).
+       build(PackageNode).
 
 1 {
   concrete_build_requirement(PackageNode, DirectDependency);
   runtime_requirement(PackageNode, node(0..X-1, DirectDependency)) : max_dupes(DirectDependency, X)
 } 1 :- attr("direct_dependency", PackageNode, node_requirement("node", DirectDependency)),
        concrete(PackageNode).
+
+direct_dependency(ParentNode, ChildNode) :- build_requirement(ParentNode, ChildNode).
+direct_dependency(ParentNode, ChildNode) :- runtime_requirement(ParentNode, ChildNode).
 
 %%%%
 % Build requirement

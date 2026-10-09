@@ -6,9 +6,6 @@ import argparse
 import os
 import shutil
 
-import llnl.util.tty as tty
-from llnl.util.filesystem import working_dir
-
 import spack
 import spack.cmd
 import spack.config
@@ -16,6 +13,8 @@ import spack.paths
 import spack.util.git
 import spack.util.gpg
 from spack.cmd.common import arguments
+from spack.util import tty
+from spack.util.filesystem import working_dir
 from spack.util.spack_yaml import syaml_dict
 
 description = "set up spack for our tutorial (WARNING: modifies config!)"
@@ -24,13 +23,12 @@ level = "long"
 
 
 # tutorial configuration parameters
-tutorial_branch = "releases/v0.23"
+tutorial_branch = "releases/v1.2"
 tutorial_mirror = "file:///mirror"
 tutorial_key = os.path.join(spack.paths.share_path, "keys", "tutorial.pub")
 
 # configs to remove
 rm_configs = [
-    "~/.spack/linux/compilers.yaml",
     "~/.spack/packages.yaml",
     "~/.spack/mirrors.yaml",
     "~/.spack/modules.yaml",
@@ -74,7 +72,7 @@ def tutorial(parser, args):
     )
     mirror_config = syaml_dict()
     mirror_config["tutorial"] = tutorial_mirror
-    spack.config.set("mirrors", mirror_config, scope="user")
+    spack.config.CONFIG.set("mirrors", mirror_config, scope="user")
 
     tty.msg("Ensuring that we trust tutorial binaries", f"spack gpg trust {tutorial_key}")
     spack.util.gpg.trust(tutorial_key)

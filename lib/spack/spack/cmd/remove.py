@@ -4,10 +4,9 @@
 
 import argparse
 
-import llnl.util.tty as tty
-
 import spack.cmd
 from spack.cmd.common import arguments
+from spack.util import tty
 
 description = "remove specs from an environment"
 section = "environments"
@@ -32,7 +31,7 @@ def setup_parser(subparser: argparse.ArgumentParser) -> None:
 
 
 def remove(parser, args):
-    env = spack.cmd.require_active_env(cmd_name="remove")
+    env = spack.cmd.require_active_env(args.subparser)
 
     with env.write_transaction():
         if args.all:
